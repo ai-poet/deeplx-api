@@ -19,7 +19,6 @@ valid_urls = []
 
 
 def check_url_availability(url):
-    global valid_urls
     try:
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -30,9 +29,10 @@ def check_url_availability(url):
         response = requests.post(url, verify=False, timeout=5, headers=headers,
                                  data=json.dumps(payload))
         if "你好，世界" in response.text:
-            valid_urls.append(url)
+            return url  # 返回可用的 URL
     except Exception as e:
         print('%s: %s' % (url, type(e).__name__))
+    return None  # 不可用的 URL 返回 None
 
 
 def get_valid_urls():
@@ -40,12 +40,19 @@ def get_valid_urls():
     with open(R"urls.txt", "r") as f:
         urls = f.read().splitlines()
 
-    urls = list(set(urls))
-    valid_urls = []  # 清空之前的 valid_urls
+    urls = list(set(urls))  # 去重
     p = Pool(200)
     jobs = [p.spawn(check_url_availability, _url) for _url in urls]
 
+    # 等待所有任务完成
     gevent.joinall(jobs)
+
+    # 构建新的 valid_urls 列表
+    new_valid_urls = [job.value for job in jobs if job.value is not None]
+
+    # 全局替换 valid_urls
+    valid_urls[:] = new_valid_urls  # 使用切片赋值实现原子操作
+
     print("Updated valid_urls. Available URLs count: {}".format(len(valid_urls)))
 
 
