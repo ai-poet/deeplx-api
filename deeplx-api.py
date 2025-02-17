@@ -1,5 +1,4 @@
 import random
-
 import gevent
 from gevent.pool import Pool
 from gevent import monkey
@@ -8,7 +7,6 @@ from gevent.pywsgi import WSGIServer
 monkey.patch_all()
 
 import requests
-
 requests.packages.urllib3.disable_warnings(
     requests.packages.urllib3.exceptions.InsecureRequestWarning
 )
@@ -38,18 +36,29 @@ def check_url_availability(url):
 
 
 def get_valid_urls():
+    global valid_urls
     with open(R"urls.txt", "r") as f:
         urls = f.read().splitlines()
 
     urls = list(set(urls))
+    valid_urls = []  # 清空之前的 valid_urls
     p = Pool(200)
     jobs = [p.spawn(check_url_availability, _url) for _url in urls]
 
     gevent.joinall(jobs)
+    print("Updated valid_urls. Available URLs count: {}".format(len(valid_urls)))
 
 
-get_valid_urls()
-print("available urls count: {}".format(len(valid_urls)))
+def periodic_update(interval):
+    """定期更新 valid_urls"""
+    while True:
+        get_valid_urls()
+        gevent.sleep(interval)  # 每隔 interval 秒更新一次
+
+
+# 启动定期更新任务
+gevent.spawn(periodic_update, 300)  # 每 5 分钟更新一次
+
 
 def single_translate(text, source_lang, target_lang):
     for i in range(10):
@@ -69,6 +78,7 @@ def single_translate(text, source_lang, target_lang):
         except Exception as e:
             print('%s' % (type(e).__name__))
 
+
 def get_translate_data(text, source_lang, target_lang):
     tasks = [gevent.spawn(single_translate, text, source_lang, target_lang) for _ in range(3)]
     done = gevent.wait(tasks, count=1)
@@ -78,7 +88,7 @@ def get_translate_data(text, source_lang, target_lang):
 
 
 @app.route('/translate', methods=['POST'])
-def translate():  # put application's code here
+def translate():
     data = json.loads(request.get_data())
     text = data['text']
     source_lang = data['source_lang']
@@ -87,5 +97,8 @@ def translate():  # put application's code here
 
 
 if __name__ == '__main__':
+    # 启动时先获取一次 valid_urls
+    get_valid_urls()
+    # 启动 Flask 服务
     http_server = WSGIServer(("0.0.0.0", 5000), app)
     http_server.serve_forever()
