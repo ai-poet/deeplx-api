@@ -24,7 +24,7 @@ def load_urls():
     return list(set(urls))  # 去重
 
 def translate_with_url(url, text, source_lang, target_lang, result_queue):
-    """使用指定URL进行翻译，若成功则将结果以JSON格式放入队列"""
+    """使用指定URL进行翻译，若成功则将结果放入队列"""
     try:
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -35,15 +35,15 @@ def translate_with_url(url, text, source_lang, target_lang, result_queue):
         response = requests.post(url, verify=False, timeout=5, headers=headers,
                                  data=json.dumps(payload))
         data = response.json()
-        if data.get("code") == 200:
-            # 将成功结果以 Python dict 形式放入队列
-            result_queue.put(data)
+        if data["code"] == 200:
+            # 将成功结果放入队列
+            result_queue.put(response.text)
     except Exception as e:
         print(f'{url}: {type(e).__name__}')
 
 def get_translate_data(text, source_lang, target_lang):
     """
-    并发请求所有URL，返回最先成功的结果（包装为JSON字符串）。
+    并发请求所有URL，返回最先成功的结果，使用队列同步。
     若在10秒内没有任何成功结果，则返回错误信息。
     """
     urls = load_urls()
@@ -56,7 +56,7 @@ def get_translate_data(text, source_lang, target_lang):
     try:
         # 等待队列中有结果，超时时间为10秒
         result = result_queue.get(timeout=10)
-        return json.dumps(result)
+        return result
     except queue.Empty:
         return json.dumps({"code": 500, "message": "Translation failed"})
     finally:
@@ -68,13 +68,16 @@ def get_translate_data(text, source_lang, target_lang):
 @app.route('/translate', methods=['POST'])
 def translate():
     """
-    接收POST请求，解析翻译参数，并调用 get_translate_data 返回翻译结果。
+    接收POST请求，解析翻译参数，并调用get_translate_data返回翻译结果，
+    且统一响应头为application/json。
     """
     data = json.loads(request.get_data())
     text = data['text']
     source_lang = data['source_lang']
     target_lang = data['target_lang']
-    return get_translate_data(text, source_lang, target_lang)
+    result = get_translate_data(text, source_lang, target_lang)
+    # 使用 Flask 的 response_class 强制设置 MIME 类型为 application/json
+    return app.response_class(response=result, mimetype='application/json')
 
 if __name__ == '__main__':
     # 启动 Flask 服务，使用 gevent 的 WSGIServer
