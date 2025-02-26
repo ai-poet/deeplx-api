@@ -1,3 +1,8 @@
+import logging
+# 配置日志，将 gevent 和 urllib3 的日志级别设置为 CRITICAL，避免打印无关的清理异常
+logging.getLogger('gevent').setLevel(logging.CRITICAL)
+logging.getLogger('urllib3').setLevel(logging.CRITICAL)
+
 import random
 import gevent
 from gevent.pool import Pool
@@ -8,7 +13,7 @@ from gevent import queue  # 导入队列模块
 monkey.patch_all()
 
 import requests
-# 禁用安全警告
+# 禁用 urllib3 的安全警告
 requests.packages.urllib3.disable_warnings(
     requests.packages.urllib3.exceptions.InsecureRequestWarning
 )
@@ -68,8 +73,8 @@ def get_translate_data(text, source_lang, target_lang):
 @app.route('/translate', methods=['POST'])
 def translate():
     """
-    接收POST请求，解析翻译参数，并调用get_translate_data返回翻译结果，
-    且统一响应头为application/json。
+    接收POST请求，解析翻译参数，并调用 get_translate_data 返回翻译结果，
+    同时统一设置响应头为 application/json。
     """
     data = json.loads(request.get_data())
     text = data['text']
