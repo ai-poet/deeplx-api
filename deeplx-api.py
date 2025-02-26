@@ -64,7 +64,7 @@ def periodic_update(interval):
 
 
 # 启动定期更新任务
-gevent.spawn(periodic_update, 300)  # 每 5 分钟更新一次
+gevent.spawn(periodic_update, 86400)  # 每隔 1天更新一次
 
 
 def single_translate(text, source_lang, target_lang):
