@@ -3,10 +3,12 @@ import gevent
 from gevent.pool import Pool
 from gevent import monkey
 from gevent.pywsgi import WSGIServer
+from gevent import queue  # 导入队列模块
 
 monkey.patch_all()
 
 import requests
+# 禁用安全警告
 requests.packages.urllib3.disable_warnings(
     requests.packages.urllib3.exceptions.InsecureRequestWarning
 )
@@ -17,12 +19,12 @@ app = Flask(__name__)
 
 def load_urls():
     """加载所有URL"""
-    with open(R"urls.txt", "r") as f:
+    with open(r"urls.txt", "r") as f:
         urls = f.read().splitlines()
     return list(set(urls))  # 去重
 
-def translate_with_url(url, text, source_lang, target_lang):
-    """使用指定URL进行翻译"""
+def translate_with_url(url, text, source_lang, target_lang, result_queue):
+    """使用指定URL进行翻译，若成功则将结果放入队列"""
     try:
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -31,40 +33,43 @@ def translate_with_url(url, text, source_lang, target_lang):
             "target_lang": target_lang
         }
         response = requests.post(url, verify=False, timeout=5, headers=headers,
-                                data=json.dumps(payload))
+                                 data=json.dumps(payload))
         data = response.json()
         if data["code"] == 200:
-            return response.text
+            # 将成功结果放入队列
+            result_queue.put(response.text)
     except Exception as e:
         print(f'{url}: {type(e).__name__}')
-    return None
 
 def get_translate_data(text, source_lang, target_lang):
-    """并发请求所有URL，返回最先成功的结果"""
+    """
+    并发请求所有URL，返回最先成功的结果，使用队列同步。
+    若在10秒内没有任何成功结果，则返回错误信息。
+    """
     urls = load_urls()
+    result_queue = queue.Queue()  # 用于获取第一个正确的翻译结果
+    tasks = []
+    for url in urls:
+        t = gevent.spawn(translate_with_url, url, text, source_lang, target_lang, result_queue)
+        tasks.append(t)
     
-    # 创建所有翻译任务
-    tasks = [gevent.spawn(translate_with_url, url, text, source_lang, target_lang) for url in urls]
-    
-    # 等待任意一个任务成功完成
-    done = gevent.wait(tasks, count=1, timeout=10)
-    
-    # 终止所有其他任务
-    for t in tasks:
-        if not t.ready():
-            t.kill()
-    
-    # 如果有成功的结果，返回第一个
-    if done:
-        result = done[0].value
-        if result:
-            return result
-    
-    # 如果没有成功的结果，返回错误信息
-    return json.dumps({"code": 500, "message": "Translation failed"})
+    try:
+        # 等待队列中有结果，超时时间为10秒
+        result = result_queue.get(timeout=10)
+        return result
+    except queue.Empty:
+        return json.dumps({"code": 500, "message": "Translation failed"})
+    finally:
+        # 杀死所有仍在运行的任务
+        for t in tasks:
+            if not t.ready():
+                t.kill()
 
 @app.route('/translate', methods=['POST'])
 def translate():
+    """
+    接收POST请求，解析翻译参数，并调用get_translate_data返回翻译结果。
+    """
     data = json.loads(request.get_data())
     text = data['text']
     source_lang = data['source_lang']
@@ -72,6 +77,6 @@ def translate():
     return get_translate_data(text, source_lang, target_lang)
 
 if __name__ == '__main__':
-    # 启动 Flask 服务
+    # 启动 Flask 服务，使用gevent的WSGIServer
     http_server = WSGIServer(("0.0.0.0", 5000), app)
     http_server.serve_forever()
