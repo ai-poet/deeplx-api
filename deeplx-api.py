@@ -1,90 +1,88 @@
 import logging
-# 配置日志，将 gevent 和 urllib3 的日志级别设置为 CRITICAL，避免打印无关的清理异常
 logging.getLogger('gevent').setLevel(logging.CRITICAL)
-logging.getLogger('urllib3').setLevel(logging.CRITICAL)
 
-import random
-import gevent
-from gevent.pool import Pool
+import os
 from gevent import monkey
 from gevent.pywsgi import WSGIServer
-from gevent import queue  # 导入队列模块
 
 monkey.patch_all()
 
-import requests
-# 禁用 urllib3 的安全警告
-requests.packages.urllib3.disable_warnings(
-    requests.packages.urllib3.exceptions.InsecureRequestWarning
-)
 from flask import Flask, request
 import json
+from openai import OpenAI
 
 app = Flask(__name__)
 
-def load_urls():
-    """加载所有URL"""
-    with open(r"urls.txt", "r") as f:
-        urls = f.read().splitlines()
-    return list(set(urls))  # 去重
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-def translate_with_url(url, text, source_lang, target_lang, result_queue):
-    """使用指定URL进行翻译，若成功则将结果放入队列"""
-    try:
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "text": text,
-            "source_lang": source_lang,
-            "target_lang": target_lang
-        }
-        response = requests.post(url, verify=False, timeout=5, headers=headers,
-                                 data=json.dumps(payload))
-        data = response.json()
-        if data["code"] == 200:
-            # 将成功结果放入队列
-            result_queue.put(response.text)
-    except Exception as e:
-        print(f'{url}: {type(e).__name__}')
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable is required")
+
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
+    base_url=OPENAI_BASE_URL
+)
 
 def get_translate_data(text, source_lang, target_lang):
     """
-    并发请求所有URL，返回最先成功的结果，使用队列同步。
-    若在10秒内没有任何成功结果，则返回错误信息。
+    使用 OpenAI API 进行翻译，返回 DeepLX 兼容格式的结果
     """
-    urls = load_urls()
-    result_queue = queue.Queue()  # 用于获取第一个正确的翻译结果
-    tasks = []
-    for url in urls:
-        t = gevent.spawn(translate_with_url, url, text, source_lang, target_lang, result_queue)
-        tasks.append(t)
-    
     try:
-        # 等待队列中有结果，超时时间为10秒
-        result = result_queue.get(timeout=10)
-        return result
-    except queue.Empty:
-        return json.dumps({"code": 500, "message": "Translation failed"})
-    finally:
-        # 杀死所有仍在运行的任务
-        for t in tasks:
-            if not t.ready():
-                t.kill()
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": 'You are a professional translator. Translate the given text accurately and naturally. Return only a JSON object with a single field "translation" containing the translated text.'
+                },
+                {
+                    "role": "user",
+                    "content": f'Translate the following text from {source_lang} to {target_lang}:\n\n{text}'
+                }
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.3
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        translated_text = result.get('translation', '')
+        
+        return json.dumps({
+            "code": 200,
+            "data": translated_text
+        })
+    except Exception as e:
+        logging.error(f"Translation error: {str(e)}")
+        return json.dumps({
+            "code": 500,
+            "message": f"Translation failed: {str(e)}"
+        })
 
 @app.route('/translate', methods=['POST'])
 def translate():
     """
-    接收POST请求，解析翻译参数，并调用 get_translate_data 返回翻译结果，
-    同时统一设置响应头为 application/json。
+    接收POST请求，解析翻译参数，并调用 OpenAI API 返回翻译结果
+    兼容 DeepLX API 格式
     """
-    data = json.loads(request.get_data())
-    text = data['text']
-    source_lang = data['source_lang']
-    target_lang = data['target_lang']
-    result = get_translate_data(text, source_lang, target_lang)
-    # 使用 Flask 的 response_class 强制设置 MIME 类型为 application/json
-    return app.response_class(response=result, mimetype='application/json')
+    try:
+        data = json.loads(request.get_data())
+        text = data['text']
+        source_lang = data.get('source_lang', 'auto')
+        target_lang = data['target_lang']
+        result = get_translate_data(text, source_lang, target_lang)
+        return app.response_class(response=result, mimetype='application/json')
+    except Exception as e:
+        error_response = json.dumps({
+            "code": 400,
+            "message": f"Invalid request: {str(e)}"
+        })
+        return app.response_class(response=error_response, mimetype='application/json', status=400)
 
 if __name__ == '__main__':
-    # 启动 Flask 服务，使用 gevent 的 WSGIServer
+    print(f"Starting OpenAI Translation API Server")
+    print(f"Model: {OPENAI_MODEL}")
+    print(f"Base URL: {OPENAI_BASE_URL}")
     http_server = WSGIServer(("0.0.0.0", 5000), app)
     http_server.serve_forever()

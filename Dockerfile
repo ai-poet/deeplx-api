@@ -10,11 +10,13 @@ COPY . .
 # 设置启动脚本权限
 RUN chmod +x start.sh
 
-# 输出容器中的文件列表
-RUN ls -l /app
-
 # 安装依赖
 RUN pip install --no-cache-dir -r requirements.txt
+
+# 环境变量
+ENV OPENAI_BASE_URL=https://api.openai.com/v1
+ENV OPENAI_MODEL=gpt-4o-mini
+ENV OPENAI_API_KEY=""
 
 # 暴露端口
 EXPOSE 5000

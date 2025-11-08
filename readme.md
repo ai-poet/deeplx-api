@@ -1,49 +1,108 @@
-# DeepLX API
+# OpenAI Translation API (DeepLX Compatible)
 
 [English](README.md) | [中文](README_ZH.md)
 
-This tool serves as an interface for immersive translation, employing multiple APIs and threads. It automatically checks API validity to obtain low-latency and effective interfaces, significantly enhancing the speed and efficiency of immersive translation. It can be deployed locally (on a PC or local Docker) or run on a VPS.
+This tool provides a translation service powered by OpenAI API with JSON object mode, while maintaining full compatibility with DeepLX API format. It's designed for immersive translation tools and can be deployed locally (PC or Docker) or on a VPS.
 
 ## Features
 
-- **Multi-API Support:** Leverages multiple translation APIs to ensure availability and redundancy.
-- **Automatic API Validation:** Dynamically tests API endpoints to find the fastest and most reliable options.
-- **Low Latency:** Optimizes for speed to provide near real-time translation.
-- **Flexible Deployment:** Can be deployed on various platforms, including local PCs, Docker, and VPS.
+- **OpenAI Powered:** Leverages OpenAI's powerful language models for high-quality translation
+- **JSON Object Mode:** Uses OpenAI's structured JSON output for reliable parsing
+- **DeepLX Compatible:** Fully compatible with existing DeepLX API clients
+- **Flexible Configuration:** Support for custom base URLs, models, and API keys
+- **High Performance:** Built with gevent for efficient concurrent request handling
+- **Easy Deployment:** Can be deployed on various platforms, including local PCs, Docker, and VPS
 
 ## Getting Started
 
-### 1. Download the Binary (Executable)
+### 1. Environment Variables
 
-1. Go to the [releases](https://github.com/geek-yes/deeplx-api/releases) page and download the `deeplx-api.exe` binary file.
-2. Place `urls.txt` and `deeplx-api.exe` in the same directory. Populate `urls.txt` with translation API URLs, one per line, in the format `http(s)://domain(ip)/translate`.
-3. Run `deeplx-api.exe`. The command prompt will display the number of available URLs.
-4. Configure your immersive translation service to use DeepLX (Beta) with the API address: `http://127.0.0.1:5000/translate`.
+The following environment variables are required:
 
-**Note:** The executable might be flagged by antivirus software (like Windows Defender). Please add the executable file to your antivirus's whitelist.
+- `OPENAI_API_KEY` (required): Your OpenAI API key
+- `OPENAI_BASE_URL` (optional): OpenAI API base URL, defaults to `https://api.openai.com/v1`
+- `OPENAI_MODEL` (optional): Model to use, defaults to `gpt-4o-mini`
 
-### 2. Docker Deployment
+### 2. Local Deployment
+
+#### Prerequisites
+- Python 3.9+
+- pip
+
+#### Steps
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Set environment variables:
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+export OPENAI_MODEL="gpt-4o-mini"  # optional
+export OPENAI_BASE_URL="https://api.openai.com/v1"  # optional
+```
+
+3. Run the service:
+```bash
+python deeplx-api.py
+```
+
+4. Configure your immersive translation service to use DeepLX (Beta) with API address: `http://127.0.0.1:5000/translate`
+
+### 3. Docker Deployment
 
 ```bash
 docker run \
-  --name deeplx-api \
+  --name openai-translation-api \
   -p 5000:5000 \
-  -v /path/to/your/urls.txt:/app/urls.txt \
-  -v /path/to/your/logs:/app/logs \
+  -e OPENAI_API_KEY="your-api-key-here" \
+  -e OPENAI_MODEL="gpt-4o-mini" \
+  -e OPENAI_BASE_URL="https://api.openai.com/v1" \
   --restart always \
-  geekyes/deeplx-api
+  your-image-name
 ```
+
+Or build from source:
+
+```bash
+docker build -t openai-translation-api .
+docker run \
+  --name openai-translation-api \
+  -p 5000:5000 \
+  -e OPENAI_API_KEY="your-api-key-here" \
+  --restart always \
+  openai-translation-api
+```
+
 You can customize the port mapping as needed.
 
-Replace /path/to/your/urls.txt and /path/to/your/logs with your local directory paths.
+Configure your immersive translation service to use DeepLX (Beta) with API address: `http://127.0.0.1:5000/translate` or `http://VPS_ip:5000/translate`.
 
-Configure your immersive translation service to use DeepLX (Beta) with API address: http://127.0.0.1:5000/translate or http://VPS_ip:5000/translate.
+## API Format
 
-### 3. urls.txt Updates
-The content of urls.txt will be updated periodically. Please keep an eye on this GitHub repository for the latest version.
+The API is fully compatible with DeepLX format:
 
-Contributing
+**Request:**
+```json
+POST /translate
+{
+  "text": "Hello, world!",
+  "source_lang": "EN",
+  "target_lang": "ZH"
+}
+```
+
+**Response:**
+```json
+{
+  "code": 200,
+  "data": "你好，世界！"
+}
+```
+
+## Contributing
 Contributions are welcome! Feel free to submit issues or pull requests.
 
-License
+## License
 This project is licensed under the [MIT License](LICENSE.md).
