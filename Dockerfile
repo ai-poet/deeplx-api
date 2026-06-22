@@ -10,8 +10,14 @@ COPY . .
 # 设置启动脚本权限
 RUN chmod +x start.sh
 
-# 安装依赖
-RUN pip install --no-cache-dir -r requirements.txt
+# 安装构建依赖（gevent 需要 C 编译器）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libc-dev \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y gcc libc-dev \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # 环境变量
 ENV OPENAI_BASE_URL=https://api.openai.com/v1
