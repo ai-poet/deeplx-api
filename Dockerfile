@@ -12,10 +12,10 @@ RUN chmod +x start.sh
 
 # 安装构建依赖（gevent 需要 C 编译器）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libc-dev \
+    build-essential \
+    python3-dev \
     && pip install --no-cache-dir -r requirements.txt \
-    && apt-get purge -y gcc libc-dev \
+    && apt-get purge -y build-essential python3-dev \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
